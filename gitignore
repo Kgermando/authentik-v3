@@ -1,0 +1,71 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.python-version
+
+# --- Tests et outils ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- Secrets et configuration locale (NE JAMAIS versionner) ---
+authentik.ini
+*.ini.local
+.env
+.env.*
+*.pfx
+*.p12
+*.pem
+*.key
+# le certificat public du MFP peut etre livre, pas la cle privee
+!MFP.cer
+
+# --- Donnees : documents, scans, bases locales ---
+documents/
+crops/
+scans/
+dataset/
+*.sqlite
+*.sqlite3
+local.db
+*.db
+*.sql.gz
+*.dump
+*.bak
+
+# --- Modeles et artefacts volumineux (a gerer hors Git ou avec Git LFS) ---
+*.onnx
+*.pt
+*.pth
+*.joblib
+models/*
+!models/.gitkeep
+
+# --- Rapports et exports generes ---
+reports_out/
+*.log
+
+# --- Packaging et installateurs ---
+packaging/output/
+packaging/build/
+*.spec.bak
+*.exe
+*.msi
+Output/
+
+# --- Editeurs et systeme ---
+.zed/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
