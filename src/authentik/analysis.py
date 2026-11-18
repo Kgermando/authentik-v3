@@ -107,14 +107,25 @@ class References:
     year_profile: dict
     n_year_docs: int
     version: str
+    # specimens ecartes parce qu'ils viennent du document analyse lui-meme (il est une reference)
+    self_excluded: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def load(cls, db: Database, year: int, exclude_sha: str | None = None) -> "References":
-        specimens = {k: [s for s in db.specimens(k) if s.get("source_sha256") != exclude_sha]
-                     for k in KINDS}
+        all_specimens = {k: db.specimens(k) for k in KINDS}
+        # Un document n'est jamais compare a ses propres specimens : il serait « copie de
+        # lui-meme » ou trivialement conforme. Le nombre ecarte sert a l'expliquer a l'agent.
+        specimens = {k: [s for s in v if s.get("source_sha256") != exclude_sha]
+                     for k, v in all_specimens.items()}
+        excluded = {k: len(all_specimens[k]) - len(specimens[k]) for k in KINDS}
         known = {k: db.known_fingerprints(k, exclude_sha) for k in KINDS}
         return cls(specimens, known, db.year_profile(year), db.count_reference_docs(year),
-                   references_version(db))
+                   references_version(db), excluded)
+
+    @property
+    def is_reference(self) -> bool:
+        """Le document analyse est lui-meme enregistre comme reference."""
+        return any(self.self_excluded.values())
 
     def expected(self, kind: str) -> bool:
         """Element attendu ? Oui par defaut ; non si les references n'en comportent jamais."""
@@ -258,7 +269,8 @@ def analyze_page(page: np.ndarray, year: int, db: Database, file_sha: str | None
                for k, f in sorted(facts.elements.items())]
     evidence = {"elements": {k: f.features() for k, f in sorted(facts.elements.items())},
                 "aging_measures": facts.aging, "references_version": refs.version,
-                "n_reference_docs_year": refs.n_year_docs, "descriptor": DESCRIPTOR_VERSION}
+                "n_reference_docs_year": refs.n_year_docs, "descriptor": DESCRIPTOR_VERSION,
+                "is_reference": refs.is_reference}
     return PageAnalysis(sig, rows, hidden, regions, facts, evidence)
 
 
@@ -336,8 +348,14 @@ def build_rows(sig: dict, missing: list[str], facts: PageFacts, refs: References
     return rows, hidden
 
 
+SELF_REFERENCE = "ce document est lui-même une référence : il n'est pas comparé à lui-même"
+
+
 def _hidden_reason(name: str, kind: str | None, facts: PageFacts, refs: References,
                    year: int) -> str:
+    if kind is not None and refs.self_excluded.get(kind) and not refs.specimens[kind] \
+            and not refs.known[kind]:
+        return f"{SELF_REFERENCE} ; aucune autre référence de {name.lower()} pour comparer"
     if name == "Vieillissement":
         if facts.aging is None:
             return "mesures impossibles (sceau ou papier vierge introuvable)"
@@ -348,7 +366,8 @@ def _hidden_reason(name: str, kind: str | None, facts: PageFacts, refs: Referenc
     if name == "Pression de l'encre":
         n = sum(1 for s in refs.specimens["seal"] if s.get("features") and s["features"].get("pressure"))
         if n < MIN_PRESSURE_REFS:
-            return f"moins de {MIN_PRESSURE_REFS} sceaux de référence mesurables ({n})"
+            own = " ; le sceau de ce document n'est pas compté" if refs.self_excluded.get("seal") else ""
+            return f"moins de {MIN_PRESSURE_REFS} sceaux de référence mesurables ({n}){own}"
         return "zone d'encre trop petite pour mesurer la pression"
     if kind == "signature" and not refs.expected("signature"):
         return "les documents de référence ne comportent pas de signature"

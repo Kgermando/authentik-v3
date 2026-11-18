@@ -146,6 +146,24 @@ def test_adding_reference_changes_key_and_removal_restores(world):
     assert db.reference_summary()[0]["documents"] == 6
 
 
+def test_reference_document_analysed_itself_explains_why(tmp_path):
+    """Cas signale par l'utilisateur : une seule reference, puis analyse du MEME fichier.
+    Il n'est pas compare a lui-meme ; le message doit le dire (et non « ajouter des references »)."""
+    cfg = AppConfig(tmp_path / "a.db", tmp_path / "docs", tmp_path / "a.ini")
+    db = Database(cfg.database)
+    ref = _save(certificate(1), tmp_path / "refs" / "ref.png")
+    assert add_reference_documents([ref], 2019, "Directeur", None, cfg, db)[0].error is None
+    o = pipeline.run_analysis(pipeline.prepare(ref), 2019, cfg, db)
+    assert "lui-même enregistré comme référence" in o.summary and o.verdict == "a_verifier"
+    assert "n'est pas comparé à lui-même" in o.hidden["Sceau"]
+    assert o.details["evidence"]["is_reference"] is True
+    # un AUTRE document de la meme annee est bien compare a cette reference
+    other = pipeline.run_analysis(pipeline.prepare(_save(certificate(2), tmp_path / "in" / "b.png")),
+                                  2019, cfg, db)
+    assert "Sceau" in {r.name for r in other.rows}
+    assert other.details["evidence"]["is_reference"] is False
+
+
 def test_duplicate_reference_reported_not_added(world):
     t, cfg, db, _ = world
     rep = add_reference_documents([t / "refs" / "ref_1.png"], 2019, "Directeur", None, cfg, db)[0]

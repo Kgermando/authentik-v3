@@ -45,7 +45,9 @@ def load_fusion(cfg: AppConfig) -> Fusion | None:
 
 
 def decide(signals: dict[str, Signal | None], fusion: Fusion | None,
-           settings: Settings = SETTINGS) -> Decision:
+           settings: Settings = SETTINGS, is_reference: bool = False) -> Decision:
+    """`is_reference` : le document analyse est lui-meme une reference (il n'est pas compare
+    a ses propres specimens) ; ne sert qu'a expliquer l'absence de controle."""
     present = {k: s for k, s in signals.items() if s is not None}
     for k in ("seal_copy", "sig_copy"):
         s = present.get(k)
@@ -75,6 +77,11 @@ def decide(signals: dict[str, Signal | None], fusion: Fusion | None,
                         "Au moins un contrôle est très anormal. Décision provisoire "
                         "(modèle non entraîné) : un agent doit confirmer.")
     if not present:
+        if is_reference:
+            return Decision(0.5, "a_verifier", False,
+                            "Ce document est lui-même enregistré comme référence : il n'est pas "
+                            "comparé à lui-même. Pour le contrôler, enregistrer d'autres documents "
+                            "de référence de la même année.")
         return Decision(0.5, "a_verifier", False,
                         "Aucun contrôle n'a pu être fait : ajouter des documents de référence.")
     flagged = any(round_score(s.risk) >= settings.review_threshold for s in present.values())

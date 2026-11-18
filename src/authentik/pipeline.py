@@ -122,7 +122,7 @@ def run_analysis(prepared: Prepared, year: int, cfg: AppConfig, db: Database,
     history = db.analyses_for_file(sha)
     pa = analyze_page(prepared.doc.pages[0], year, db, sha, prepared.doc.dpi[0], settings)
     progress("Décision", 80)
-    d = decide(pa.signals, load_fusion(cfg), settings)
+    d = decide(pa.signals, load_fusion(cfg), settings, is_reference=pa.evidence["is_reference"])
     fingerprints = []
     for kind, f in sorted(pa.facts.elements.items()):
         crop = save_crop(f.color, cfg.crops_dir / f"{sha}_{kind}.png")
