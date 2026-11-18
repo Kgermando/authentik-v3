@@ -30,6 +30,8 @@ def test_normal_doc_passes_abnormal_flagged():
     bad = dict(normal, paper_L=normal["paper_L"] + 40, seal_contrast=normal["seal_contrast"] + 60)
     s = aging_signal(bad, prof, 60)
     assert s.risk >= 0.3 and "paper_L" in s.evidence["flagged"]
+    one = aging_signal(dict(normal, paper_L=normal["paper_L"] + 40), prof, 60)
+    assert one.evidence["flagged"] == ["paper_L"] and one.risk == 0.5     # orange, pas vert
 
 
 def test_not_enough_references_masks_row():
@@ -51,7 +53,8 @@ def test_active_from_5_references_with_reduced_reliability():
     bad = dict(_refs(1, rng)[0])
     bad["paper_L"] += 40                                              # papier nettement anormal
     s = aging_signal(bad, prof, 5)
-    assert "paper_L" in s.evidence["flagged"] and s.evidence["z_limit"] > 3.5
+    assert "paper_L" in s.evidence["flagged"] and abs(s.evidence["z_limit"] - 6.0) < 0.05
+    assert s.risk >= 0.5                                   # une anomalie nette suffit a verifier
 
 
 def test_full_reliability_from_30_references():

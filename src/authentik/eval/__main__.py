@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from ..determinism import init_determinism
 from ..store import load_config
@@ -19,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     init_determinism()
     cfg = load_config(a.config)
-    out = a.sortie or f"{a.dossier.rstrip('/')}/rapport"
+    out = a.sortie or str(Path(a.dossier) / "rapport")
     try:
         report = evaluate(a.dossier, cfg, out, lambda s, p: print(f"[{p:3d} %] {s}", flush=True))
     except (FileNotFoundError, ValueError) as e:

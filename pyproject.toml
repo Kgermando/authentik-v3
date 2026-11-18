@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "authentik"
-version = "0.1.0"
+dynamic = ["version"]          # lu dans src/authentik/__init__.py (packaging/version.py)
 description = "Detection de certificats administratifs falsifies (Ministere de la Formation Professionnelle, RDC)"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  "PySide6>=6.6",
+  "PySide6-Essentials>=6.6",   # QtCore, QtGui, QtWidgets suffisent (pas de navigateur web)
   "zeroconf>=0.130",
   "httpx>=0.27",
   "PyMuPDF>=1.24",
@@ -30,6 +30,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyinstaller>=6.5"]
 train = ["torch>=2.2", "torchvision>=0.17", "easyocr>=1.7"]
+
+[tool.setuptools.dynamic]
+version = {attr = "authentik.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

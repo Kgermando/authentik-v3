@@ -13,9 +13,24 @@ from .. import __version__
 from ..determinism import init_determinism
 
 
+def _attach_console() -> bool:
+    """Windows : une application fenetree n'a pas de console. Lancee depuis une invite de
+    commandes (--verifier, --evaluer), on s'y rattache pour afficher les messages."""
+    if sys.platform != "win32" or sys.stdout is not None:
+        return sys.stdout is not None
+    import ctypes
+    if not ctypes.windll.kernel32.AttachConsole(-1):        # -1 : console du processus parent
+        return False
+    sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+    sys.stderr = sys.stdout
+    return True
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(argv if argv is not None else sys.argv)
     init_determinism()                       # AGENTS.md 0 bis, regle 1 : au demarrage
+    if "--evaluer" in argv or "--verifier" in argv:
+        _attach_console()
     if "--evaluer" in argv:                  # evaluation officielle (AGENTS.md 9), sans interface
         from ..eval.__main__ import main as eval_main
         i = argv.index("--evaluer")

@@ -65,6 +65,11 @@ def configure_tesseract() -> bool:
         if exe.exists():
             pytesseract.pytesseract.tesseract_cmd = str(exe)
             os.environ["TESSDATA_PREFIX"] = str(base / "tessdata")
+    elif sys.platform == "win32" and pytesseract.pytesseract.tesseract_cmd == "tesseract":
+        # Windows, hors application empaquetee : Tesseract est rarement dans le PATH
+        default = Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tesseract-OCR" / "tesseract.exe"
+        if default.exists():
+            pytesseract.pytesseract.tesseract_cmd = str(default)
     try:
         pytesseract.get_tesseract_version()
         return "fra" in pytesseract.get_languages(config="")

@@ -1,4 +1,4 @@
-; Installateur Inno Setup 6 de Authentik. Compile par build_windows.ps1 (ISCC.exe).
+﻿; Installateur Inno Setup 6 de Authentik. Compile par build_windows.ps1 (ISCC.exe).
 ; Editeur : Ministere de la Formation Professionnelle (MFP). Voir AGENTS.md 5 bis.
 #define AppVersion GetEnv("AUTHENTIK_VERSION")
 #if AppVersion == ""
@@ -37,9 +37,11 @@ Name: "{commonappdata}\Authentik\documents"; Permissions: users-modify; Flags: u
 
 [Files]
 Source: "..\dist\Authentik\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\GUIDE.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Authentik"; Filename: "{app}\Authentik.exe"
+Name: "{group}\Guide d'utilisation"; Filename: "{app}\GUIDE.md"
 Name: "{group}\Désinstaller Authentik"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Authentik"; Filename: "{app}\Authentik.exe"; Tasks: desktopicon
 

@@ -2,8 +2,13 @@
 # Construction du paquet Ubuntu (.deb) de Authentik.
 #
 # A executer SUR UBUNTU, depuis la racine du projet :
-#   bash packaging/build_ubuntu.sh            # tests + construction
+#   bash packaging/build_ubuntu.sh                  # tests + construction, version +0.0.1
 #   bash packaging/build_ubuntu.sh --skip-tests
+#   bash packaging/build_ubuntu.sh --version minor  # version +0.1.0 (major : +1.0.0)
+#   bash packaging/build_ubuntu.sh --meme-version   # meme numero (ex. version Windows deja faite)
+#
+# Chaque construction AUGMENTE la version (src/authentik/__init__.py, voir packaging/version.py) ;
+# en cas d'echec, l'ancien numero est remis. Historique : packaging/HISTORIQUE_VERSIONS.txt.
 #
 # Resultat : dist/authentik_<version>_<ubuntu>_amd64.deb
 # Installation sur un poste :  sudo apt install ./authentik_<version>_<ubuntu>_amd64.deb
@@ -17,7 +22,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 SKIP_TESTS=0
-[[ "${1:-}" == "--skip-tests" ]] && SKIP_TESTS=1
+BUMP=patch
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --skip-tests) SKIP_TESTS=1 ;;
+        --meme-version) BUMP="" ;;
+        --version) shift; BUMP="${1:-}"
+                   [[ "$BUMP" =~ ^(patch|minor|major)$ ]] || { echo "--version : patch, minor ou major"; exit 1; } ;;
+        *) echo "Option inconnue : $1"; exit 1 ;;
+    esac
+    shift
+done
 
 step() { printf '\n=== %s ===\n' "$1"; }
 
@@ -41,18 +56,35 @@ else
     "$PY" -m pip install -e ".[dev]"
 fi
 
-VERSION="$("$PY" -c 'import authentik; print(authentik.__version__)')"
-# ne pas « sourcer » /etc/os-release : il definit aussi VERSION (conflit avec la version du logiciel)
-DISTRO="ubuntu$( (. /etc/os-release && echo "$VERSION_ID") )"
-DEB="dist/authentik_${VERSION}_${DISTRO}_amd64.deb"
-
-# 2. Tests
+# 2. Tests (sur le code tel quel, avant de changer la version)
 if [[ $SKIP_TESTS -eq 0 ]]; then
     step "Tests"
     QT_QPA_PLATFORM=offscreen "$PY" -m pytest -q
 fi
 
-# 3. PyInstaller --onedir
+# 3. Nouvelle version (remise en cas d'echec)
+step "Version"
+OLD_VERSION="$("$PY" packaging/version.py)"
+BUILD_OK=0
+restore_version() {
+    if [[ $BUILD_OK -eq 0 && -n "$BUMP" ]]; then
+        "$PY" packaging/version.py fixer "$OLD_VERSION" >/dev/null
+        echo "Construction echouee : version remise a $OLD_VERSION"
+    fi
+}
+trap restore_version EXIT
+if [[ -n "$BUMP" ]]; then
+    VERSION="$("$PY" packaging/version.py suivante "$BUMP")"
+    echo "Version : $OLD_VERSION -> $VERSION"
+else
+    VERSION="$OLD_VERSION"
+    echo "Version inchangee : $VERSION"
+fi
+# ne pas « sourcer » /etc/os-release : il definit aussi VERSION (conflit avec la version du logiciel)
+DISTRO="ubuntu$( (. /etc/os-release && echo "$VERSION_ID") )"
+DEB="dist/authentik_${VERSION}_${DISTRO}_amd64.deb"
+
+# 4. PyInstaller --onedir
 step "PyInstaller"
 BUILD="$ROOT/build/ubuntu"
 rm -rf "$BUILD"
@@ -137,6 +169,8 @@ dpkg-deb --root-owner-group -Zxz --build "$PKG" "$DEB"
 step "Termine"
 dpkg-deb --info "$DEB" | sed -n '1,12p'
 ls -lh "$DEB"
+"$PY" packaging/version.py noter "$DISTRO (.deb)"
+BUILD_OK=1                       # seulement maintenant : tout a reussi, la version est gardee
 echo
 echo "Installation :  sudo apt install ./$DEB"
 echo "Lancement    :  menu des applications > Authentik, ou commande « authentik »"

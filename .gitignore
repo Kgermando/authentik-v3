@@ -69,3 +69,14 @@ Output/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# --- Ajouts (construction multi-plateforme) ---
+.venv-build/
+*.deb
+*.msix
+*.whl
+packaging/vendor/
+# kit Windows : paquets et installateurs (volumineux) ; seul le mode d'emploi est versionne
+windows_kit/wheels/
+windows_kit/outils/
+!windows_kit/LISEZMOI.md

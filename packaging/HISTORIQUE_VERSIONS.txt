@@ -1,0 +1,3 @@
+Version	Date	Plateforme
+0.1.0	2026-11-17 16:15	ubuntu26.04 (avant numerotation automatique)
+0.1.1	2026-11-17 17:06	ubuntu26.04 (.deb)

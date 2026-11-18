@@ -5,16 +5,19 @@ Conditions de validite :
   sans amelioration automatique) ;
 - au moins `aging_min_docs_per_year` documents authentiques par annee (5), sinon ligne masquee ;
 - entre 5 et `aging_reliable_docs` (30) documents : la plage normale est mal connue. La limite
-  de score z est elargie (x racine(30 / n)) : seuls les ecarts nets sont signales, et la
-  confiance est reduite. Le signal est marque `reduced_reliability`.
+  de score z est elargie (x (30 / n) ** 0.3 : 6,0 pour 5 documents) : en simulation, moins de
+  5 % de documents authentiques signales a tort. Confiance reduite ; signal marque
+  `reduced_reliability`.
+
+Risque : une seule mesure nettement hors plage suffit a demander une verification (0,5) ;
+chaque mesure supplementaire l'augmente (6 mesures -> 1,0). Le calcul fourni a l'origine
+(part des mesures signalees) laissait une anomalie nette isolee en dessous du seuil de revue.
 Limite : un faux imprime sur du papier d'epoque de la meme annee passe ce controle seul.
 """
 from __future__ import annotations
 
 import cv2
 import numpy as np
-
-from math import sqrt
 
 from ..config import SETTINGS, Settings
 from ..determinism import round_score
@@ -64,10 +67,10 @@ def aging_signal(m: dict | None, profiles: dict, n_docs: int,
     if m is None or n_docs < settings.aging_min_docs_per_year:
         return None
     reduced = n_docs < settings.aging_reliable_docs
-    limit = settings.aging_z_limit * (sqrt(settings.aging_reliable_docs / n_docs) if reduced else 1.0)
+    limit = settings.aging_z_limit * ((settings.aging_reliable_docs / n_docs) ** 0.3 if reduced else 1.0)
     zs = {k: round_score(robust_z(m[k], *profiles[k])) for k in MEASURES}
     flagged = [k for k in MEASURES if abs(zs[k]) > limit]
-    risk = len(flagged) / len(MEASURES)
+    risk = 0.0 if not flagged else 0.5 + 0.5 * (len(flagged) - 1) / (len(MEASURES) - 1)
     conf = min(1.0, n_docs / 100)           # plus l'annee est documentee, plus on s'y fie
     return Signal(risk=round_score(risk), confidence=round_score(conf),
                   evidence={"flagged": flagged, "z": zs, "z_limit": round_score(limit),
