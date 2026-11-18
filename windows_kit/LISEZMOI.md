@@ -1,4 +1,4 @@
-# Construire Authentik sous Windows (.exe ou .msix)
+# Construire Authentik sous Windows (.exe, .msi ou .msix)
 
 Ce kit contient tout ce qu'il faut pour reconstruire Authentik sur un poste Windows, **sans
 Internet** pour la partie Python :
@@ -27,7 +27,11 @@ Windows 10 ou 11, 64 bits.
    (`C:\Program Files\Tesseract-OCR`). Le script de construction l'embarque dans l'application et
    y ajoute `fra.traineddata` : les postes utilisateurs n'auront rien à installer.
 3. **Pour le .exe** : lancer `outils\innosetup-6.7.4.exe` (options par défaut).
-4. **Pour le .msix** : installer le **Windows SDK** (outils `makeappx.exe` et `signtool.exe`),
+4. **Pour le .msi** : télécharger `wix314-binaries.zip` (WiX Toolset 3.14.1,
+   https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm), le décompresser dans un dossier
+   (par exemple `C:\outils\wix314`) et passer ce dossier au script avec `-WixDir`. Aucune
+   installation ni droit administrateur requis. La signature utilise `signtool.exe` (Windows SDK, point 5).
+5. **Pour le .msix** : installer le **Windows SDK** (outils `makeappx.exe` et `signtool.exe`),
    par exemple dans PowerShell : `winget install Microsoft.WindowsSDK.10.0.26100`
    (ou depuis https://developer.microsoft.com/windows/downloads/windows-sdk/).
 
@@ -40,6 +44,11 @@ Ouvrir PowerShell **dans le dossier du projet** (celui qui contient `pyproject.t
 ```powershell
 # Installateur .exe (le plus simple, recommandé)
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+
+# Installateur .msi signé (déploiement en entreprise)
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 -Cible msi -Pfx C:\cles\MFP.pfx -WixDir C:\outils\wix314
+#   sans question : ajouter -PfxMotDePasseFichier C:\cles\MFP.pfx.motdepasse
+#   (fichier créé par creer_certificat.ps1 -MotDePasseAleatoire, lisible par ce seul compte Windows)
 
 # Paquet .msix (signature obligatoire)
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 -Cible msix -Pfx C:\cles\MFP.pfx
@@ -65,7 +74,8 @@ Le script :
 3. lance les **tests** (environ 10 minutes) ;
 4. construit l'application (`dist\Authentik\Authentik.exe`) avec Tesseract embarqué ;
 5. **vérifie l'application construite** (`Authentik.exe --verifier`) ;
-6. produit `dist\Authentik-<version>-setup.exe` et/ou `dist\Authentik-<version>.msix`, signés si `-Pfx`.
+6. produit `dist\Authentik-<version>-setup.exe`, `dist\Authentik-<version>.msi` et/ou
+   `dist\Authentik-<version>.msix`, signés si `-Pfx`.
 
 ## 3. Certificat de signature du MFP (pour signer, obligatoire pour le .msix)
 
@@ -94,6 +104,11 @@ powershell -ExecutionPolicy Bypass -File installer_certificat.ps1 -Cer MFP.cer
 - **.exe** : double-cliquer `Authentik-<version>-setup.exe`. Les données (base, documents) vont dans
   `C:\ProgramData\Authentik`, partagé par les utilisateurs du poste et **conservé** à la
   désinstallation.
+- **.msi** : double-cliquer `Authentik-<version>.msi`, ou en silencieux (GPO, SCCM, Intune) :
+  `msiexec /i Authentik-<version>.msi /qn` (ajouter `DESKTOP_SHORTCUT=0` pour ne pas créer
+  de raccourci sur le bureau). Mêmes dossiers de données que le .exe (`C:\ProgramData\Authentik`,
+  conservé à la désinstallation). Une version plus récente remplace l'ancienne automatiquement.
+  Ne pas installer le .exe **et** le .msi sur le même poste.
 - **.msix** : double-cliquer `Authentik-<version>.msix`. Attention : un paquet MSIX ne peut pas donner
   de droits sur `C:\ProgramData`. Si l'application affiche l'avertissement « Paquet MSIX : les
   données… seront effacées à la désinstallation », choisir un dossier durable dans

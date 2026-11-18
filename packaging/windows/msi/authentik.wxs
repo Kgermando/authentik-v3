@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Installateur .msi de Authentik (WiX Toolset 3.14). Compile par packaging\build_windows.ps1 -Cible msi.
+  Editeur : Ministere de la Formation Professionnelle (MFP). Voir AGENTS.md 5 bis.
+
+  Les fichiers de l'application (dist\Authentik) sont listes automatiquement par heat.exe
+  (groupe AppFiles). Variables passees a candle : Version, AppDir, GuideFile, IconFile.
+
+  Deploiement silencieux (entreprise) :
+    msiexec /i Authentik-X.Y.Z.msi /qn                       installation
+    msiexec /i Authentik-X.Y.Z.msi /qn DESKTOP_SHORTCUT=0    sans raccourci sur le bureau
+    msiexec /x Authentik-X.Y.Z.msi /qn                       desinstallation
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <!-- UpgradeCode : NE JAMAIS CHANGER (sinon une mise a jour s'installe a cote de l'ancienne). -->
+  <Product Id="*" Name="Authentik" Language="1036" Codepage="1252" Version="$(var.Version)"
+           Manufacturer="Ministère de la Formation Professionnelle (MFP)"
+           UpgradeCode="{BA89F9BA-0F77-4E66-87F5-62B4491AC504}">
+
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64"
+             Languages="1036" SummaryCodepage="1252"
+             Manufacturer="Ministère de la Formation Professionnelle (MFP)"
+             Description="Authentik $(var.Version) : contrôle des certificats administratifs"
+             Comments="© Ministère de la Formation Professionnelle (MFP), RDC" />
+
+    <!-- Mise a jour : la nouvelle version remplace l'ancienne. Donnees (ProgramData) conservees. -->
+    <MajorUpgrade DowngradeErrorMessage="Une version plus récente d'Authentik est déjà installée." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AuthentikIcon" SourceFile="$(var.IconFile)" />
+    <Property Id="ARPPRODUCTICON" Value="AuthentikIcon" />
+    <Property Id="DESKTOP_SHORTCUT" Value="1" />
+    <PropertyRef Id="WIX_ACCOUNT_USERS" />  <!-- nom local du groupe « Utilisateurs » -->
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="Authentik" />
+      </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="AppMenuFolder" Name="Authentik" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DataFolder" Name="Authentik">
+          <Directory Id="DocumentsFolder" Name="documents" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="GuideFile" Guid="*">
+        <File Id="GuideMd" Source="$(var.GuideFile)" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Menu Demarrer -->
+    <DirectoryRef Id="AppMenuFolder">
+      <Component Id="MenuShortcuts" Guid="{4535BB46-8FB9-4B46-ADAD-1E716D49C734}">
+        <Shortcut Id="MenuAuthentik" Name="Authentik" Target="[INSTALLFOLDER]Authentik.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AuthentikIcon" />
+        <Shortcut Id="MenuGuide" Name="Guide d'utilisation" Target="[INSTALLFOLDER]GUIDE.md" />
+        <RemoveFolder Id="RemoveAppMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\MFP\Authentik" Name="MenuShortcuts"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Bureau (desactivable : DESKTOP_SHORTCUT=0) -->
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="{D2376FCD-83D6-4F86-BB43-B125CDCD3848}">
+        <Condition>DESKTOP_SHORTCUT = "1"</Condition>
+        <Shortcut Id="DesktopAuthentik" Name="Authentik" Target="[INSTALLFOLDER]Authentik.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AuthentikIcon" />
+        <RegistryValue Root="HKCU" Key="Software\MFP\Authentik" Name="DesktopShortcut"
+                       Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Base SQLite et documents partages par les utilisateurs du poste (comme l'installateur .exe).
+         Permanent : la desinstallation NE supprime PAS ces dossiers (donnees conservees). -->
+    <DirectoryRef Id="DataFolder">
+      <Component Id="DataFolderAcl" Guid="{BDD9DDB2-8069-446F-AF70-88FB19E8C337}"
+                 Permanent="yes" KeyPath="yes">
+        <CreateFolder>
+          <util:PermissionEx User="[WIX_ACCOUNT_USERS]" GenericRead="yes" GenericWrite="yes"
+                             GenericExecute="yes" Delete="yes" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="DocumentsFolder">
+      <Component Id="DocumentsFolderCreate" Guid="{6C1E3F0A-6E0B-4C8F-9C61-2F7D3A9B5E14}"
+                 Permanent="yes" KeyPath="yes">
+        <CreateFolder />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Application" Title="Authentik" Level="1" Absent="disallow">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="GuideFile" />
+      <ComponentRef Id="MenuShortcuts" />
+      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="DataFolderAcl" />
+      <ComponentRef Id="DocumentsFolderCreate" />
+    </Feature>
+
+    <!-- Assistant : bienvenue, dossier d'installation, installation (pas d'ecran de licence). -->
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <UIRef Id="WixUI_InstallDir" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2">1</Publish>
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2">1</Publish>
+    </UI>
+  </Product>
+</Wix>

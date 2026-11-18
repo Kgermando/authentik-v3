@@ -1,13 +1,18 @@
-﻿# Construction de Authentik pour Windows : installateur .exe (Inno Setup) et/ou paquet .msix.
+﻿# Construction de Authentik pour Windows : installateur .exe (Inno Setup), .msi (WiX) et/ou .msix.
 #
 # A executer SUR WINDOWS 10/11 64 bits, dans PowerShell, depuis la racine du projet :
 #   powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1                 # .exe
+#   powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 -Cible msi -Pfx C:\cles\MFP.pfx
 #   powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 -Cible msix -Pfx C:\cles\MFP.pfx
 #   powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1 -Cible tous -Pfx C:\cles\MFP.pfx
 #
 # Options :
-#   -Cible exe|msix|tous   ce qu'il faut produire (defaut : exe)
+#   -Cible exe|msi|msix|tous   ce qu'il faut produire (defaut : exe)
 #   -Pfx <fichier>         certificat de signature du MFP (.pfx). OBLIGATOIRE pour le .msix.
+#   -PfxMotDePasseFichier <fichier>  mot de passe du .pfx chiffre (DPAPI), cree par
+#                          creer_certificat.ps1 -MotDePasseAleatoire ; sinon il est demande.
+#   -WixDir <dossier>      dossier de WiX Toolset 3.14 (candle.exe, light.exe, heat.exe) si
+#                          WiX n'est pas installe dans Program Files ni dans le PATH.
 #   -SansTests             ne pas lancer pytest (deconseille)
 #   -EnLigne               telecharger les paquets Python au lieu d'utiliser windows_kit\wheels
 #   -Version patch|minor|major   partie de la version a augmenter (defaut : patch, 0.1.0 -> 0.1.1)
@@ -21,8 +26,10 @@
 # toute erreur avec le message affiche.
 
 param(
-    [ValidateSet("exe", "msix", "tous")] [string]$Cible = "exe",
+    [ValidateSet("exe", "msi", "msix", "tous")] [string]$Cible = "exe",
     [string]$Pfx = "",
+    [string]$PfxMotDePasseFichier = "",
+    [string]$WixDir = "",
     [string]$TimestampUrl = "http://timestamp.digicert.com",
     [switch]$SansTests,
     [switch]$EnLigne,
@@ -30,6 +37,12 @@ param(
     [switch]$MemeVersion
 )
 $Partie = $Version
+# Le parametre garde sa liste de valeurs autorisees (patch|minor|major) : sans cette ligne,
+# y ranger plus bas le numero « 0.1.2 » echoue (ValidateSetFailure).
+Remove-Variable -Name Version
+$FaireExe = $Cible -in @("exe", "tous")
+$FaireMsi = $Cible -in @("msi", "tous")
+$FaireMsix = $Cible -in @("msix", "tous")
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -49,6 +62,8 @@ function Echec($msg) {
     }
     exit 1
 }
+# Toute erreur PowerShell imprevue passe aussi par Echec (et remet l'ancienne version).
+trap { Echec "$_" }
 function Verifier($quoi) { if ($LASTEXITCODE -ne 0) { Echec "$quoi (code $LASTEXITCODE)" } }
 
 function Trouver-Outil($nom, $motifs) {
@@ -96,13 +111,26 @@ Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Vendor "tesseract-u
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue (Join-Path $Vendor "doc")
 
 $Iscc = $null
-if ($Cible -ne "msix") {
+if ($FaireExe) {
     $Iscc = Trouver-Outil "iscc.exe" @("${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe")
     if (-not $Iscc) { Echec "Inno Setup introuvable : installer windows_kit\outils\innosetup-*.exe" }
     Write-Host "Inno Setup : $Iscc"
 }
+$Candle = $null; $Light = $null; $Heat = $null
+if ($FaireMsi) {
+    $Motifs = @()
+    if ($WixDir) { $Motifs += (Join-Path $WixDir "candle.exe") }
+    if ($env:WIX) { $Motifs += (Join-Path $env:WIX "bin\candle.exe") }
+    $Motifs += @("${env:ProgramFiles(x86)}\WiX Toolset v3.*\bin\candle.exe", "$env:ProgramFiles\WiX Toolset v3.*\bin\candle.exe")
+    $Candle = Trouver-Outil "candle.exe" $Motifs
+    if (-not $Candle) { Echec "WiX Toolset 3.14 introuvable : decompresser wix314-binaries.zip et indiquer -WixDir <dossier>." }
+    $WixBin = Split-Path -Parent $Candle
+    $Light = Join-Path $WixBin "light.exe"; $Heat = Join-Path $WixBin "heat.exe"
+    if (-not ((Test-Path $Light) -and (Test-Path $Heat))) { Echec "light.exe ou heat.exe absent de $WixBin" }
+    Write-Host "WiX : $WixBin"
+}
 $MakeAppx = $null
-if ($Cible -ne "exe") {
+if ($FaireMsix) {
     if (-not $Pfx) { Echec "Le .msix doit etre signe : indiquer -Pfx <certificat MFP .pfx> (voir packaging\windows\creer_certificat.ps1)." }
     $MakeAppx = Trouver-Outil "makeappx.exe" @("${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\makeappx.exe")
     if (-not $MakeAppx) { Echec "makeappx.exe introuvable : installer le Windows SDK (outils de signature et d'empaquetage)." }
@@ -115,7 +143,12 @@ if ($Pfx) {
     if (-not (Test-Path $Pfx)) { Echec "Certificat introuvable : $Pfx" }
     $SignTool = Trouver-Outil "signtool.exe" @("${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.*\x64\signtool.exe")
     if (-not $SignTool) { Echec "signtool.exe introuvable : installer le Windows SDK." }
-    $sec = Read-Host -AsSecureString "Mot de passe du certificat $Pfx"
+    if ($PfxMotDePasseFichier) {
+        if (-not (Test-Path $PfxMotDePasseFichier)) { Echec "Fichier de mot de passe introuvable : $PfxMotDePasseFichier" }
+        $sec = Get-Content $PfxMotDePasseFichier | ConvertTo-SecureString   # DPAPI : meme compte Windows
+    } else {
+        $sec = Read-Host -AsSecureString "Mot de passe du certificat $Pfx"
+    }
     $PfxMdp = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
     $Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($Pfx, $PfxMdp)
     Write-Host "Certificat : $($Cert.Subject) (valable jusqu'au $($Cert.NotAfter))"
@@ -154,9 +187,9 @@ if ($MemeVersion) {
     $Version = $Ancienne
     Write-Host "Version inchangee : $Version"
 } else {
+    $script:AncienneVersion = $Ancienne       # avant le changement : retour arriere garanti
     $Version = (& $Py packaging\version.py suivante $Partie).Trim()
     Verifier "changement de version"
-    $script:AncienneVersion = $Ancienne
     Write-Host "Version : $Ancienne -> $Version"
 }
 $VersionInfo = Join-Path $Root "build\windows\version_info.txt"
@@ -188,13 +221,14 @@ if ($p.ExitCode -ne 0) { Echec "Authentik.exe --verifier a echoue (code $($p.Exi
 
 function Signer($fichier) {
     if (-not $Pfx) { return }
-    & $SignTool sign /f $Pfx /p $PfxMdp /fd SHA256 /tr $TimestampUrl /td SHA256 $fichier
+    # /d : nom affiche par Windows (UAC) a l'installation d'un .msi
+    & $SignTool sign /f $Pfx /p $PfxMdp /fd SHA256 /tr $TimestampUrl /td SHA256 /d "Authentik" $fichier
     Verifier "signature de $fichier"
 }
 if ($Pfx) { Etape "6. Signature de Authentik.exe"; Signer $Exe }
 
 # ---------------------------------------------------------------------------------------------
-if ($Cible -ne "msix") {
+if ($FaireExe) {
     Etape "7. Installateur .exe (Inno Setup)"
     $env:AUTHENTIK_VERSION = $Version
     & $Iscc "packaging\authentik.iss"; Verifier "Inno Setup"
@@ -203,7 +237,29 @@ if ($Cible -ne "msix") {
     Write-Host "Installateur : $Setup" -ForegroundColor Green
 }
 
-if ($Cible -ne "exe") {
+if ($FaireMsi) {
+    Etape "7 bis. Installateur .msi (WiX Toolset 3)"
+    $MsiBuild = Join-Path $Root "build\msi"
+    if (Test-Path $MsiBuild) { Remove-Item -Recurse -Force $MsiBuild }
+    New-Item -ItemType Directory -Force -Path $MsiBuild | Out-Null
+    $AppDir = Join-Path $Root "dist\Authentik"
+    $Wxs = Join-Path $Root "packaging\windows\msi\authentik.wxs"
+    # Liste des fichiers de l'application (GUID de composant stables, calcules d'apres le chemin)
+    & $Heat dir $AppDir -nologo -cg AppFiles -dr INSTALLFOLDER -srd -sreg -scom -ag `
+        -var var.AppDir -out (Join-Path $MsiBuild "files.wxs"); Verifier "heat (liste des fichiers)"
+    & $Candle -nologo -arch x64 -ext WixUtilExtension -out "$MsiBuild\" `
+        "-dVersion=$Version" "-dAppDir=$AppDir" "-dGuideFile=$(Join-Path $Root 'GUIDE.md')" `
+        "-dIconFile=$(Join-Path $Root 'packaging\authentik.ico')" `
+        $Wxs (Join-Path $MsiBuild "files.wxs"); Verifier "candle (compilation WiX)"
+    $Msi = Join-Path $Root "dist\Authentik-$Version.msi"
+    & $Light -nologo -ext WixUIExtension -ext WixUtilExtension -cultures:fr-fr -spdb `
+        -out $Msi (Join-Path $MsiBuild "authentik.wixobj") (Join-Path $MsiBuild "files.wixobj")
+    Verifier "light (assemblage du .msi)"
+    Signer $Msi
+    Write-Host "Installateur MSI : $Msi" -ForegroundColor Green
+}
+
+if ($FaireMsix) {
     Etape "8. Paquet .msix"
     $Layout = Join-Path $Root "build\msix\layout"
     if (Test-Path $Layout) { Remove-Item -Recurse -Force $Layout }

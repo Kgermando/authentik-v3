@@ -58,6 +58,8 @@ reports_out/
 packaging/output/
 packaging/build/
 *.spec.bak
+# genere par PyInstaller a chaque construction (les options sont dans build_windows.ps1)
+/Authentik.spec
 *.exe
 *.msi
 Output/
